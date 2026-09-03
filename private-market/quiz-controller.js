@@ -47,7 +47,7 @@
     }
 
     var card = document.createElement("div");
-    card.style.cssText = "background:" + C.cardBg + "; border:1px solid " + C.cardBorder + "; border-radius:12px; padding:40px; max-width:700px; margin:0 auto; box-shadow:0 10px 30px rgba(0,0,0,0.35);";
+    card.style.cssText = "background:" + C.cardBg + "; border:1px solid " + C.cardBorder + "; border-radius:12px; padding:40px; max-width:900px; margin:0 auto; box-shadow:0 10px 30px rgba(0,0,0,0.35);";
 
     var progress = document.createElement("div");
     progress.style.cssText = "font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:" + C.gold + "; margin-bottom:8px;";
