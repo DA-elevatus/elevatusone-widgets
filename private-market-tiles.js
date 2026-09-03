@@ -1,9 +1,22 @@
 // Data only. Rendering / tabs / modal all live in tiles-controller.js
+//
+// Each tile: { title, summary, body: [ ...items... ] }
+// The modal renders body items IN ORDER, so you can interleave text and media:
+//   - "some text"                      -> a paragraph
+//   - { text: "some text" }            -> a paragraph (same thing, explicit form)
+//   - { type: "image", src, alt, caption }
+//   - { type: "video", src, poster, caption, autoplay, loop }
+//   - { type: "embed", src, caption }  -> YouTube / Vimeo link
+// `type` is auto-detected from the URL if omitted (.mp4/.webm -> video,
+// youtube/vimeo -> embed, otherwise image). `caption` shows a small line
+// beneath the media. A bare URL string in body is treated as TEXT, not media —
+// media items must be objects.
 window.ELV_registerTileSet("private-market", "Private Markets", [
   { title: "Understanding the Opportunity", summary: "Why private markets have become a core building block in modern portfolios.",
     body: ["Private markets — private equity, private credit, real estate, and infrastructure — give investors exposure to companies and assets that never trade on public exchanges.",
+           { type: "image", src: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=1200&q=80", alt: "Skyline", caption: "Example image — replace with your own." },
            "As more of the economy stays private for longer, advisors who understand this space can offer clients a broader, more diversified opportunity set.",
-           "As more of the economy stays private for longer, advisors who understand this space can offer clients a broader, more diversified opportunity set.",
+           { type: "embed", src: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", caption: "Example video — replace with your own." },
            "As more of the economy stays private for longer, advisors who understand this space can offer clients a broader,",
            "As more of the economy stays private for longer, advisors who understand this space can offer clients a broader,"] },
   { title: "Diversification Beyond Stocks and Bonds", summary: "How private allocations can smooth returns and reduce correlation to public markets.",

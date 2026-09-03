@@ -116,16 +116,98 @@
     }
   }
 
+  function toEmbedUrl(src) {
+    var yt = src.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]{11})/);
+    if (yt) return "https://www.youtube.com/embed/" + yt[1];
+    var vm = src.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+    if (vm) return "https://player.vimeo.com/video/" + vm[1];
+    return src;
+  }
+
+  // Accepts a string URL or { type, src, alt, caption, poster, autoplay, loop }
+  function buildMedia(m) {
+    if (!m) return null;
+    if (typeof m === "string") m = { src: m };
+    var src = m.src;
+    if (!src) return null;
+
+    var type = m.type;
+    if (!type) {
+      if (/\.(mp4|webm|ogg|ogv|mov)(\?|#|$)/i.test(src)) type = "video";
+      else if (/(youtube\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)/i.test(src)) type = "embed";
+      else type = "image";
+    }
+
+    var wrap = document.createElement("div");
+    wrap.style.cssText = "margin:0 0 22px;";
+    var node;
+
+    if (type === "video") {
+      node = document.createElement("video");
+      node.src = src;
+      node.controls = true;
+      node.preload = "metadata";
+      if (m.poster) node.poster = m.poster;
+      if (m.autoplay) { node.autoplay = true; node.muted = true; node.loop = !!m.loop; node.setAttribute("playsinline", ""); }
+      node.style.cssText = "width:100%; border-radius:8px; display:block; background:#000;";
+    } else if (type === "embed") {
+      var frame = document.createElement("div");
+      frame.style.cssText = "position:relative; width:100%; padding-top:56.25%; border-radius:8px; overflow:hidden; background:#000;";
+      var iframe = document.createElement("iframe");
+      iframe.src = toEmbedUrl(src);
+      iframe.setAttribute("frameborder", "0");
+      iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen");
+      iframe.setAttribute("allowfullscreen", "");
+      iframe.style.cssText = "position:absolute; inset:0; width:100%; height:100%; border:0;";
+      frame.appendChild(iframe);
+      node = frame;
+    } else {
+      node = document.createElement("img");
+      node.src = src;
+      node.alt = m.alt || "";
+      node.loading = "lazy";
+      node.style.cssText = "width:100%; border-radius:8px; display:block;";
+    }
+
+    wrap.appendChild(node);
+    if (m.caption) {
+      var cap = document.createElement("div");
+      cap.style.cssText = "font-size:12px; color:#64748b; margin-top:8px; line-height:1.5;";
+      cap.textContent = m.caption;
+      wrap.appendChild(cap);
+    }
+    return wrap;
+  }
+
+  function buildText(str) {
+    var p = document.createElement("p");
+    p.style.margin = "0 0 14px";
+    p.textContent = str;
+    return p;
+  }
+
+  // A body item is either a string (paragraph), { text: "..." } (paragraph),
+  // or a media descriptor (string URL is treated as text, so media must be an
+  // object here: { type/src/... } — see buildMedia).
+  function buildBodyItem(item) {
+    if (item == null) return null;
+    if (typeof item === "string") return buildText(item);
+    if (typeof item.text === "string") return buildText(item.text);
+    if (item.src || item.type) return buildMedia(item);
+    return null;
+  }
+
   function openModal(tile, i) {
     els.modalNumber.textContent = "0" + (i + 1);
     els.modalTitle.textContent = tile.title;
     els.modalBody.innerHTML = "";
-    for (var j = 0; j < tile.body.length; j++) {
-      var p = document.createElement("p");
-      p.style.margin = "0 0 14px";
-      p.textContent = tile.body[j];
-      els.modalBody.appendChild(p);
+
+    var body = tile.body || [];
+    for (var j = 0; j < body.length; j++) {
+      var node = buildBodyItem(body[j]);
+      if (node) els.modalBody.appendChild(node);
     }
+
     if (els.modal) {
       els.modal.style.maxWidth = "900px";
       els.modal.style.padding = "44px 48px";
@@ -137,6 +219,8 @@
 
   function closeModal() {
     if (els.overlay) els.overlay.style.display = "none";
+    // Stop any playing video / embed
+    if (els.modalBody) els.modalBody.innerHTML = "";
   }
 
   // ---- Load the data files (see DATA_URLS above) ----
