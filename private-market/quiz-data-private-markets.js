@@ -1,0 +1,66 @@
+(function(){
+  // EDITABLE CONTENT: replace/add questions. Each needs:
+  // question, options (array of strings), correctIndex (0-based), and an
+  // optional explanation shown after answering.
+  var questions = [
+    {
+      question: "When a client asks why institutional investors tend to outperform individual investors over the long run, what is the most accurate response?",
+      options: [
+        "They trade more frequently and react faster to market changes",
+        "Their consistent, long-term allocations across private equity, credit, real estate, and infrastructure are a significant contributor to institutional investors’ performance",
+        "They invest exclusively in the largest public companies with the strongest track records",
+        "They hold more cash during volatile periods to reduce drawdowns"
+      ],
+      correctIndex: 1,
+      explanation: "Institutional investors have long allocated a meaningful share of their portfolios to private markets, which has been a consistent contributor to their long-term performance."
+    },
+    {
+      question: "Which of the following best distinguishes private markets from public markets?",
+      options: [
+        "Private market assets are traded on public exchanges like the NYSE",
+        "Private market transactions are negotiated directly between investors, outside public exchanges",
+        "Private markets only include real estate investments",
+        "Private markets require no minimum investment period"
+      ],
+      correctIndex: 1,
+      explanation: "Private market transactions are negotiated directly between parties, which insulates them from the daily price swings and liquidity of public markets."
+    },
+    {
+      question: "What best describes private credit?",
+      options: [
+        "Loans issued exclusively by traditional banks",
+        "Non-bank lenders and funds that issue loans and credit instruments directly to borrowers",
+        "A type of publicly traded bond fund",
+        "Short-term government treasury bills"
+      ],
+      correctIndex: 1,
+      explanation: "Private credit refers to non-bank lenders and funds issuing loans directly to borrowers, bypassing traditional banks and public trading options."
+    },
+    {
+      question: "Which asset class involves investing in things like energy grids, transportation networks, and digital infrastructure?",
+      options: [
+        "Private Equity",
+        "Private Credit",
+        "Private Infrastructure",
+        "Private Real Estate"
+      ],
+      correctIndex: 2,
+      explanation: "Private infrastructure investments focus on the physical backbone of the economy, including energy, transportation, and digital infrastructure."
+    },
+    {
+      question: "What is one commonly cited potential benefit of allocating to private markets within a portfolio?",
+      options: [
+        "Guaranteed higher returns with no additional risk",
+        "Immediate daily liquidity, same as public markets",
+        "Potential for greater diversification and attractive risk-adjusted returns",
+        "Elimination of all investment risk"
+      ],
+      correctIndex: 2,
+      explanation: "Private markets may offer more attractive risk-adjusted returns and greater diversification opportunities, though they typically involve less liquidity than public markets."
+    }
+  ];
+
+  if (window.ELV_registerQuiz) {
+    window.ELV_registerQuiz("private-markets-quiz", "Quick Confidence Check", questions);
+  }
+})();
