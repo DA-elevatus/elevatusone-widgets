@@ -5,12 +5,16 @@
     "practice-management": "Practice Management"
   };
 
-  // Optional: hosted data-file URLs to auto-load. Leave empty if you include
-  // the data <script> tags directly on the page (recommended). Any entry that
-  // still contains "YOUR-HOST" is ignored.
-  var DATA_URLS = [
-    // "https://YOUR-HOST-HERE/private-market-tiles.js",
-    // "https://YOUR-HOST-HERE/practice-management-tiles.js"
+  // Data files the controller loads itself, so the page only needs ONE
+  // <script> tag (this file). For local preview these are relative paths;
+  // for Milemarker swap them for your hosted GitHub Pages URLs, e.g.
+  //   "https://YOUR-HOST-HERE/private-market-tiles.js"
+  // You can also override this list by setting window.ELV_TILE_SOURCES
+  // before this script loads. Entries containing "YOUR-HOST" are skipped,
+  // as are data sets already registered via their own <script> tag.
+  var DATA_URLS = (window.ELV_TILE_SOURCES && window.ELV_TILE_SOURCES.length) ? window.ELV_TILE_SOURCES : [
+    "private-market-tiles.js",
+    "practice-management-tiles.js"
   ];
 
   var datasets = {};        // key -> { label, tiles }
@@ -135,13 +139,21 @@
     if (els.overlay) els.overlay.style.display = "none";
   }
 
-  // ---- Auto-load hosted data files (optional; see DATA_URLS above) ----
+  // ---- Load the data files (see DATA_URLS above) ----
+  function keyFromUrl(url) {
+    for (var k in LABEL_FALLBACK) {
+      if (url.indexOf(k) !== -1) return k;
+    }
+    return null;
+  }
   DATA_URLS.forEach(function(url){
     if (!url || url.indexOf("YOUR-HOST") !== -1) return;
+    var k = keyFromUrl(url);
+    if (k && datasets[k]) return; // already registered via its own <script> tag
     var s = document.createElement("script");
     s.src = url;
     s.async = false;
-    document.body.appendChild(s);
+    (document.body || document.head).appendChild(s);
   });
 
   if (document.readyState === "loading") {
