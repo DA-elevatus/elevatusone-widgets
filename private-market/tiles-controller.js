@@ -13,8 +13,8 @@
   // before this script loads. Entries containing "YOUR-HOST" are skipped,
   // as are data sets already registered via their own <script> tag.
   var DATA_URLS = (window.ELV_TILE_SOURCES && window.ELV_TILE_SOURCES.length) ? window.ELV_TILE_SOURCES : [
-    "https://da-elevatus.github.io/elevatusone-widgets/private-market-tiles.js",
-    "https://da-elevatus.github.io/elevatusone-widgets/practice-management-tiles.js"
+    "https://da-elevatus.github.io/elevatusone-widgets/private-market/private-market-tiles.js",
+    "https://da-elevatus.github.io/elevatusone-widgets/private-market/practice-management-tiles.js"
   ];
 
   var datasets = {};        // key -> { label, tiles }
