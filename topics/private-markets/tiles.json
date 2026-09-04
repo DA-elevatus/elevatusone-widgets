@@ -1,0 +1,143 @@
+{
+  "header": {
+    "kicker": "PRIVATE MARKETS",
+    "title": "Advisor Education Resource",
+    "intro": "Essentials every advisor should understand before bringing private market allocations to clients. Click a tile to open it."
+  },
+  "tabs": [
+    {
+      "key": "essentials",
+      "label": "Private Markets",
+      "tiles": [
+        {
+          "title": "Understanding Private Markets",
+          "summary": "A breakdown of what private markets are, how they're structured, and what growing access to them means for individual investors and the advisors guiding them.",
+          "body": [
+            "Private Markets Explained",
+            "Why many of today's most sophisticated investors allocate to private assets — and why a growing number of clients are asking about them.",
+            "Advisors are fielding more and more questions from everyday investors about private equity, private credit, private real estate, and private infrastructure. Client curiosity keeps building, and advisors need to stay ahead of it. This lesson gives a quick tour of these asset classes and the case for adding them to client portfolios.",
+            "What are private markets? They let investors put money into companies and assets that don't trade on public exchanges such as the NYSE or Nasdaq. Because deals are negotiated directly between the parties, private transactions are shielded from the daily price swings and liquidity pressures of public markets — which can translate into more attractive risk-adjusted returns and stronger diversification.",
+            "Private market opportunities generally fall into four asset classes:",
+            "Private equity — funds that buy, invest in, and actively improve privately held companies, from small startups to large enterprises.",
+            "Private credit — non-bank lenders and funds that make loans and issue credit directly to borrowers, sidestepping traditional banks and public debt markets.",
+            "Private real estate — funds that invest directly in physical property such as logistics warehouses, apartment complexes, and data centers, outside publicly traded REITs.",
+            "Private infrastructure — investments in the physical backbone of the economy: energy grids, transportation networks, digital infrastructure, and utilities.",
+            { "type": "image", "src": "potentialB.jpeg", "alt": "Private markets can bring potential benefits to a portfolio", "caption": "Private markets can bring potential benefits to a portfolio." },
+            "Adding private markets to a portfolio can bring real potential benefits — as illustrated by private market allocations within a traditional 60/40 portfolio over 2016–2024, the earliest span of commonly available data.",
+            { "type": "image", "src": "potentialA.jpeg", "alt": "Private market allocations in a traditional 60/40 portfolio context", "caption": "Private market allocations in a traditional 60/40 portfolio context, 2016–2024." }
+          ]
+        },
+        {
+          "title": "Private Equity 101",
+          "summary": "How private equity investing works, and why it's become a go-to strategy for investors focused on long-term capital growth.",
+          "body": [
+            "Private assets often behave differently than public stocks and bonds, which can help dampen overall portfolio volatility.",
+            "That said, they come with trade-offs — including reduced liquidity — that need to be weighed against the diversification benefit."
+          ]
+        },
+        {
+          "title": "Private Credit 101",
+          "summary": "The fundamentals of private credit and the potential opportunities it opens up for your clients.",
+          "body": [
+            "Private investments typically lock up capital for years, which can be unfamiliar territory for clients used to daily liquidity.",
+            "Clear, plain-language conversations about time horizon and access to capital are essential before any allocation is made."
+          ]
+        },
+        {
+          "title": "Private Real Estate 101",
+          "summary": "How private real estate investments are managed, and why more investors are treating it as a staple portfolio holding.",
+          "body": [
+            "Unlike public index investing, the gap in performance between skilled and unskilled private markets managers can be substantial.",
+            "Track record, sourcing capability, and operational expertise all become critical parts of due diligence."
+          ]
+        },
+        {
+          "title": "Private Infrastructure 101",
+          "summary": "What infrastructure investing looks like, and why its potential for steady, long-term cash flow appeals to long-horizon planning.",
+          "body": [
+            "Advisors who successfully integrate private markets tend to start with education — for themselves and their clients — before moving to implementation.",
+            "Vehicle structure, minimums, and reporting cadence all shape how smoothly this fits into an existing practice."
+          ]
+        },
+        {
+          "title": "Where Investor Expectations Are Headed",
+          "summary": "How client attitudes toward private markets are shifting, and what advisors can do to stay aligned with them.",
+          "body": [
+            "Access to private markets has been expanding, with newer fund structures designed specifically for individual investors.",
+            "Advisors who build fluency now are positioning themselves — and their clients — for a landscape where private markets play a larger role."
+          ]
+        }
+      ]
+    },
+    {
+      "key": "practice-management",
+      "label": "Practice Management",
+      "tiles": [
+        {
+          "title": "Kicking Off the Private Markets Conversation",
+          "summary": "How to frame private markets in language that actually clicks with clients.",
+          "body": [
+            "Private markets — private equity, private credit, real estate, and infrastructure — give investors exposure to companies and assets that never trade on public exchanges.",
+            "As more of the economy stays private for longer, advisors who understand this space can offer clients a broader, more diversified opportunity set."
+          ]
+        },
+        {
+          "title": "Making Private Markets Click for Clients",
+          "summary": "Turning a confusing topic into a clear one, with practical tips for better client conversations.",
+          "body": [
+            "Private assets often behave differently than public stocks and bonds, which can help dampen overall portfolio volatility.",
+            "That said, they come with trade-offs — including reduced liquidity — that need to be weighed against the diversification benefit."
+          ]
+        },
+        {
+          "title": "Debunking Private Markets Myths",
+          "summary": "Common misconceptions worth addressing head-on, with clarity and honesty.",
+          "body": [
+            "Private investments typically lock up capital for years, which can be unfamiliar territory for clients used to daily liquidity.",
+            "Clear, plain-language conversations about time horizon and access to capital are essential before any allocation is made."
+          ]
+        },
+        {
+          "title": "Standing Out With Private Markets",
+          "summary": "Using private markets access to build client trust and sharpen your value proposition.",
+          "body": [
+            "Unlike public index investing, the gap in performance between skilled and unskilled private markets managers can be substantial.",
+            "Track record, sourcing capability, and operational expertise all become critical parts of due diligence."
+          ]
+        },
+        {
+          "title": "Matching Clients to the Right Allocation",
+          "summary": "Aligning investment structures with each client's liquidity needs, timeline, and broader goals.",
+          "body": [
+            "Advisors who successfully integrate private markets tend to start with education — for themselves and their clients — before moving to implementation.",
+            "Vehicle structure, minimums, and reporting cadence all shape how smoothly this fits into an existing practice."
+          ]
+        },
+        {
+          "title": "Making Sense of Perpetual Fund Structures",
+          "summary": "How perpetual funds are built, and how to present them clearly to qualified clients.",
+          "body": [
+            "Access to private markets has been expanding, with newer fund structures designed specifically for individual investors.",
+            "Advisors who build fluency now are positioning themselves — and their clients — for a landscape where private markets play a larger role."
+          ]
+        },
+        {
+          "title": "Building Income-Focused Portfolios",
+          "summary": "Using private market allocations to boost income potential and growth within client portfolios.",
+          "body": [
+            "Private credit and private real estate can add contractual income streams that complement traditional bond allocations.",
+            "Blending these sources thoughtfully can lift a portfolio's income profile without abandoning its growth objectives."
+          ]
+        },
+        {
+          "title": "Building Growth-Focused Portfolios",
+          "summary": "Turning private market exposure into a portfolio built around long-term growth.",
+          "body": [
+            "Private equity and growth-oriented private infrastructure give long-horizon clients access to value creation that plays out over years, not quarters.",
+            "Structuring exposure around a client's time horizon lets the illiquidity work in their favor rather than against them."
+          ]
+        }
+      ]
+    }
+  ]
+}
