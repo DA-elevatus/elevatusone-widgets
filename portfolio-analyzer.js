@@ -5,16 +5,22 @@
    This file owns everything under #pa-root and does not touch markup
    outside that container.
 
-   STATUS: file intake + UI wiring below is fully functional against the
-   current page markup. Report GENERATION (actually reading a statement
-   and producing a branded report) is a demo stub — see the clearly
-   marked "CLAUDE API INTEGRATION POINT" section for exactly where and
-   how to wire up the real backend call.
+   FLOW (v2 — submit button):
+     1. Advisor uploads one or more files. Nothing is generated yet.
+     2. Advisor clicks "Generate Report" (#pa-submit).
+     3. generatePortfolioReport() runs:
+          - if CONFIG.SUBMIT_ENDPOINT is set  -> POSTs the files there
+            (intended target: an n8n Webhook node — see notes below)
+          - if CONFIG.SUBMIT_ENDPOINT is ''   -> demo stub (placeholder)
+     4. Adding or removing files after a report is built marks the report
+        out of date; the advisor clicks Generate Report again.
 
    Element IDs this file depends on (all present in the current page):
      pa-root, pa-file, pa-drop, pa-status, pa-results, pa-filename,
      pa-clear, pa-stats, pa-allocbar, pa-table, pa-report-empty,
      pa-builder, pa-print, pa-preview-wrap, pa-preview
+   Optional (added in v2; script still runs if missing):
+     pa-submit, pa-submit-hint
    ========================================================================= */
 (function () {
   'use strict';
@@ -29,12 +35,23 @@
   --------------------------------------------------------------------- */
   var ALLOWED = ['pdf', 'csv', 'xlsx', 'xls', 'xlsm', 'txt'];
 
+  var CONFIG = {
+    // Leave '' to keep using the demo stub.
+    // When the n8n workflow exists, paste its PRODUCTION webhook URL here,
+    // e.g. 'https://<your-n8n-host>/webhook/portfolio-analyzer'
+    SUBMIT_ENDPOINT: '',
+    // Abort the request if the workflow hasn't answered in this many ms.
+    TIMEOUT_MS: 180000
+  };
+
   /* ---------------------------------------------------------------------
      State
   --------------------------------------------------------------------- */
   var files = [];              // { id, file, url }
   var nextId = 1;
   var report = null;           // { html } once a report has been generated
+  var generating = false;      // true while a request is in flight
+  var stale = false;           // true if files changed after the last report
   var reportRequestToken = 0;  // guards against stale async responses
 
   /* ---------------------------------------------------------------------
@@ -76,8 +93,16 @@
   }
 
   /* ---------------------------------------------------------------------
-     File intake
+     File intake — uploading NO LONGER triggers report generation.
+     Any change to the file set cancels an in-flight request and marks an
+     existing report as out of date.
   --------------------------------------------------------------------- */
+  function filesChanged() {
+    reportRequestToken++;      // ignore any response still in flight
+    generating = false;
+    if (report) stale = true;
+  }
+
   function addFiles(list) {
     var added = 0, rejected = [];
     Array.prototype.forEach.call(list || [], function (f) {
@@ -86,38 +111,41 @@
       added++;
     });
 
+    if (added) filesChanged();
+
+    var next = ' Click Generate Report when all files are added.';
     if (rejected.length && !added) {
-      status('Unsupported file type: ' + rejected.join(', ') + '. Please upload a PDF, CSV, or Excel file.', 'error');
+      status('Unsupported file type: ' + rejected.join(', ') + '. Please upload a PDF, CSV, Excel, or TXT file.', 'error');
     } else if (rejected.length) {
-      status(added + ' file(s) added. Skipped unsupported: ' + rejected.join(', ') + '.', 'ok');
+      status(added + ' file(s) added. Skipped unsupported: ' + rejected.join(', ') + '.' + next, 'ok');
     } else if (added) {
-      status(added + ' file' + (added > 1 ? 's' : '') + ' uploaded. ' + files.length + ' total.', 'ok');
+      status(added + ' file' + (added > 1 ? 's' : '') + ' added. ' + files.length + ' total.' + next, 'ok');
     }
 
     render();
-    if (added) requestReport(); // (re)generate whenever the file set changes
   }
 
   function removeFile(id) {
     var x = find(id);
     if (x) URL.revokeObjectURL(x.url);
     files = files.filter(function (f) { return f.id !== id; });
-    render();
+    filesChanged();
     if (files.length) {
       status(files.length + ' file' + (files.length === 1 ? '' : 's') + ' uploaded.', 'ok');
-      requestReport();
     } else {
       status('');
       report = null;
-      renderReport();
+      stale = false;
     }
+    render();
   }
 
   function clearAll() {
     files.forEach(function (x) { URL.revokeObjectURL(x.url); });
     files = [];
     report = null;
-    reportRequestToken++; // invalidate any in-flight request
+    stale = false;
+    filesChanged();
     render();
     status('');
   }
@@ -127,11 +155,15 @@
 
      NOTE: this table lists the *uploaded source files*, not parsed
      positions. Real holdings / asset-class data depends on the analysis
-     step below (Claude, optionally cross-checked against Nitrogen) —
-     until that exists, this is a file manifest, not a positions table,
-     and the page copy above it ("Change any asset class...") is ahead
-     of what this script actually does.
+     step (the n8n workflow).
   --------------------------------------------------------------------- */
+  function reportStatusLabel() {
+    if (generating) return 'Generating…';
+    if (report && stale) return 'Out of date';
+    if (report) return 'Ready';
+    return 'Not generated';
+  }
+
   function render() {
     var has = files.length > 0;
     $('pa-results').style.display = has ? 'block' : 'none';
@@ -139,6 +171,8 @@
 
     $('pa-stats').innerHTML = has ? statsHtml() : '';
     $('pa-allocbar').innerHTML = has ? allocHtml() : '';
+
+    renderSubmit();
 
     if (!has) { $('pa-table').innerHTML = ''; renderReport(); return; }
 
@@ -160,6 +194,8 @@
             '<button type="button" data-rm="' + x.id + '" style="' + btn + 'color:#94a3b8;">Remove</button>' +
           '</td></tr>';
       }).join('') + '</tbody></table>';
+
+    renderReport();
   }
 
   function statsHtml() {
@@ -167,19 +203,36 @@
     var label = 'font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#64748b;margin-bottom:4px;';
     var value = 'font-size:20px;font-weight:700;color:#f8fafc;';
     var totalSize = files.reduce(function (s, x) { return s + x.file.size; }, 0);
-    // "Report Status" is the only figure here grounded in real state.
-    // Once the analysis step returns real portfolio data (total value,
-    // account count, etc.), add stat boxes for those alongside this.
     return (
       '<div style="' + box + '"><div style="' + label + '">Files</div><div style="' + value + '">' + files.length + '</div></div>' +
       '<div style="' + box + '"><div style="' + label + '">Combined Size</div><div style="' + value + '">' + size(totalSize) + '</div></div>' +
-      '<div style="' + box + '"><div style="' + label + '">Report Status</div><div style="' + value + 'font-size:15px;color:#C5A572;">' + (report ? 'Ready' : 'Pending analysis') + '</div></div>'
+      '<div style="' + box + '"><div style="' + label + '">Report Status</div><div style="' + value + 'font-size:15px;color:#C5A572;">' + reportStatusLabel() + '</div></div>'
     );
   }
 
   function allocHtml() {
-    // Placeholder until the analysis step returns real asset-class weights.
     return '<div style="font-size:12px;color:#64748b;border:1px dashed #334155;border-radius:8px;padding:10px 14px;">Asset allocation will appear here once statement analysis is connected.</div>';
+  }
+
+  /* ---------------------------------------------------------------------
+     Submit button
+  --------------------------------------------------------------------- */
+  function renderSubmit() {
+    var b = $('pa-submit');
+    var hint = $('pa-submit-hint');
+    if (!b) return;
+    var disabled = !files.length || generating;
+    b.disabled = disabled;
+    b.style.opacity = disabled ? '0.55' : '1';
+    b.style.cursor = disabled ? 'not-allowed' : 'pointer';
+    b.textContent = generating ? 'Generating…' : (report && !stale ? 'Regenerate Report' : 'Generate Report');
+    if (hint) {
+      hint.textContent = generating
+        ? 'Building the report — this can take a minute.'
+        : (report && stale)
+          ? 'Files changed since the last report. Generate again to update it.'
+          : 'Add every statement for this household, then generate the report.';
+    }
   }
 
   $('pa-table').addEventListener('click', function (e) {
@@ -192,108 +245,90 @@
   });
 
   /* ---------------------------------------------------------------------
-     Report generation — orchestration
+     Report generation — orchestration (only called from the button)
   --------------------------------------------------------------------- */
   function requestReport() {
-    if (!files.length) return;
+    if (!files.length || generating) return;
     var token = ++reportRequestToken;
-    report = null;
-    renderReport(); // shows the "generating" state immediately
+    generating = true;
+    render();
     status('Analyzing statement' + (files.length > 1 ? 's' : '') + ' and building report…', 'busy');
 
     generatePortfolioReport(files)
       .then(function (result) {
-        if (token !== reportRequestToken) return; // superseded by a newer request
+        if (token !== reportRequestToken) return; // superseded
+        generating = false;
+        if (!result || (!result.html && !result.pdfUrl)) throw new Error('The report service returned an empty response');
         report = result;
-        renderReport();
+        stale = false;
+        render();
         status('Report ready.', 'ok');
       })
       .catch(function (err) {
         if (token !== reportRequestToken) return;
-        report = null;
-        renderReport();
+        generating = false;
+        render();
         status('Report generation failed: ' + (err && err.message ? err.message : 'unknown error') + '. Please try again.', 'error');
       });
   }
 
   /* =======================================================================
-     ================  CLAUDE API INTEGRATION POINT  =======================
+     ================  REPORT BACKEND INTEGRATION POINT  ===================
      =======================================================================
-     This is the one function that turns uploaded statements into an actual
-     report. Everything above this line (upload UI, file list, stats,
-     status messages, print wiring) is functional today. Everything in
-     this function is a DEMO STUB — it does not call Claude, Nitrogen, or
-     any backend. Replace the body below with a real call, following the
-     notes here.
+     Sends the files to CONFIG.SUBMIT_ENDPOINT (the n8n Webhook URL) as
+     multipart/form-data:
+         file0, file1, ...   the uploaded files (n8n stores these as binary
+                             properties with the same names)
+         fileCount           number of files
+         fileNames           JSON array of original file names
+         source              'milemarker-portfolio-analyzer'
+     Expected response (from n8n's "Respond to Webhook" node):
+         200  { "html": "<...report html...>" }   or   { "pdfUrl": "https://..." }
+         4xx/5xx  { "message": "what went wrong" }
 
-     WHY THIS CAN'T CALL THE ANTHROPIC API DIRECTLY FROM THIS FILE:
-       - This script runs in the visitor's browser. Any Anthropic API key
-         placed here would be visible to anyone who opens dev tools — an
-         Anthropic API key must never be called directly from client-side
-         JS.
-       - The real call has to go through an Elevatus-controlled backend
-         endpoint that holds the Claude API key server-side, and that
-         this script talks to over HTTPS. That backend does not exist
-         yet — it is the actual piece of work this stub is standing in
-         for.
-
-     WHAT THAT BACKEND ENDPOINT SHOULD DO (server-side, not part of this
-     file):
-       1. Receive the uploaded statement file(s) as posted by the
-          fetch() call below (multipart/form-data).
-       2. Pass the statement to the Claude API — Claude can read PDF
-          pages natively — to extract holdings, balances, income, and
-          gain/loss data. This extraction approach was validated
-          end-to-end earlier against a real Schwab statement.
-       3. Optionally cross-reference the extracted holdings against
-          Nitrogen (Riskalyze) for computed risk analytics (Risk Number,
-          stress tests, GPA). Note: that earlier test also surfaced a
-          real Nitrogen bug — inconsistent proxy assignment on
-          unresolved/custom holdings can overstate modeled risk — so any
-          Nitrogen-derived figures should be checked or clearly flagged,
-          not presented as fact without review.
-       4. Assemble the branded report (the Elevatus reportlab template
-          already built and validated is the reference for layout/
-          styling) and return either:
-            a) { html: "<...report html...>" } for inline preview, or
-            b) { pdfUrl: "https://.../report.pdf" } to a generated PDF.
-       5. Return errors as a non-2xx response with a JSON { message }
-          body so the .catch() in requestReport() above can surface
-          something specific rather than a generic failure.
-
-     SECURITY / PRIVACY NOTE: uploaded statements contain client PII and
-     account numbers. The backend endpoint must require the same
-     authentication as this page (Advisor / Org Admin / Firm Admin /
-     Senior Advisor / Office Admin), and statements should not be logged
-     or retained beyond what generating the report requires.
+     SECURITY / PRIVACY: statements contain client PII and account numbers.
+     Anything placed in this file (URLs, header secrets) is visible to anyone
+     who can open the page's dev tools. Do not put an Anthropic API key here.
   ========================================================================= */
   function generatePortfolioReport(fileList) {
-    // ---- REPLACE EVERYTHING BELOW THIS LINE WITH THE REAL CALL --------
-    //
-    // Example of what the real implementation should look like:
-    //
-    //   var formData = new FormData();
-    //   fileList.forEach(function (x) { formData.append('statements', x.file, x.file.name); });
-    //
-    //   return fetch('https://api.elevatusone.com/portfolio-analyzer/generate', {
-    //     method: 'POST',
-    //     credentials: 'include',   // send the advisor's session/auth
-    //     body: formData
-    //   }).then(function (res) {
-    //     if (!res.ok) {
-    //       return res.json().catch(function () { return {}; }).then(function (body) {
-    //         throw new Error(body.message || ('Request failed (' + res.status + ')'));
-    //       });
-    //     }
-    //     return res.json(); // expected: { html: '...' } or { pdfUrl: '...' }
-    //   });
-    //
-    // ---------------------------------------------------------------------
+    if (!CONFIG.SUBMIT_ENDPOINT) return demoStub(fileList);
 
-    // DEMO STUB — simulates latency and returns placeholder HTML so the
-    // rest of the UI (status messages, report panel, print button) can
-    // be exercised end-to-end before the real backend exists. Delete
-    // this block once the fetch() above is wired up.
+    var formData = new FormData();
+    fileList.forEach(function (x, i) { formData.append('file' + i, x.file, x.file.name); });
+    formData.append('fileCount', String(fileList.length));
+    formData.append('fileNames', JSON.stringify(fileList.map(function (x) { return x.file.name; })));
+    formData.append('source', 'milemarker-portfolio-analyzer');
+
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, CONFIG.TIMEOUT_MS) : null;
+
+    return fetch(CONFIG.SUBMIT_ENDPOINT, {
+      method: 'POST',
+      body: formData,
+      signal: controller ? controller.signal : undefined
+    }).then(function (res) {
+      if (timer) clearTimeout(timer);
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          throw new Error(body.message || ('Request failed (' + res.status + ')'));
+        });
+      }
+      return res.json();
+    }).then(function (body) {
+      // pdfUrl responses get a simple inline preview so the panel isn't blank
+      if (body && !body.html && body.pdfUrl) {
+        body.html = '<iframe src="' + esc(body.pdfUrl) + '" style="width:100%;height:900px;border:0;"></iframe>';
+      }
+      return body;
+    }, function (err) {
+      if (timer) clearTimeout(timer);
+      if (err && err.name === 'AbortError') throw new Error('The report service took too long to respond');
+      throw err;
+    });
+  }
+
+  // DEMO STUB — used while CONFIG.SUBMIT_ENDPOINT is ''.
+  function demoStub(fileList) {
     return new Promise(function (resolve) {
       setTimeout(function () {
         resolve({
@@ -301,9 +336,9 @@
             '<div style="padding:48px;font-family:Georgia,serif;color:#0f172a;">' +
               '<div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#B8944B;margin-bottom:8px;">Elevatus Wealth Management &middot; Demo Preview</div>' +
               '<div style="font-size:22px;font-weight:700;margin-bottom:16px;">Portfolio Report — Not Yet Connected</div>' +
-              '<div style="font-size:14px;line-height:1.6;color:#334155;">This is placeholder output from the demo stub in generatePortfolioReport(). ' +
+              '<div style="font-size:14px;line-height:1.6;color:#334155;">This is placeholder output from the demo stub. ' +
               'Files received: ' + fileList.map(function (x) { return esc(x.file.name); }).join(', ') + '. ' +
-              'Wire up the commented Claude API call above to replace this with a real, branded report.</div>' +
+              'Set CONFIG.SUBMIT_ENDPOINT to the n8n webhook URL to replace this with a real report.</div>' +
             '</div>'
         });
       }, 900);
@@ -321,6 +356,7 @@
     var printBtn = $('pa-print');
     var wrap = $('pa-preview-wrap');
     var box = $('pa-preview');
+    var msg = function (t) { return '<div style="padding:60px 24px;text-align:center;color:#64748b;font-size:14px;">' + t + '</div>'; };
 
     if (!has) {
       wrap.style.display = 'none';
@@ -329,22 +365,31 @@
       return;
     }
 
-    if (!report) {
-      // mid-generation (or failed) state
-      wrap.style.display = 'block';
-      box.innerHTML = '<div style="padding:60px 24px;text-align:center;color:#64748b;font-size:14px;">Generating report…</div>';
+    wrap.style.display = 'block';
+
+    if (generating && !report) {
+      box.innerHTML = msg('Generating report…');
       printBtn.style.display = 'none';
       return;
     }
 
-    wrap.style.display = 'block';
+    if (!report) {
+      box.innerHTML = msg('Files are ready. Click <strong style="color:#B8944B;">Generate Report</strong> above to build the report.');
+      printBtn.style.display = 'none';
+      return;
+    }
+
     printBtn.style.display = 'inline-block';
-    box.innerHTML = report.html || '<div style="padding:40px;text-align:center;color:#64748b;">No preview available.</div>';
+    var banner = stale
+      ? '<div style="background:#fef3c7;color:#92400e;font-size:13px;padding:10px 16px;font-family:Inter,sans-serif;">The uploaded files changed after this report was built. Click Generate Report to update it.</div>'
+      : '';
+    box.innerHTML = banner + (report.html || msg('No preview available.'));
   }
 
   $('pa-print').addEventListener('click', function () {
     if (!report) return;
     var w = window.open('', '_blank');
+    if (!w) { status('Your browser blocked the print window. Allow pop-ups for this site and try again.', 'error'); return; }
     w.document.write('<html><head><title>Portfolio Report</title></head><body>' + (report.html || '') + '</body></html>');
     w.document.close();
     w.focus();
@@ -376,10 +421,10 @@
   });
 
   $('pa-clear').addEventListener('click', clearAll);
+  if ($('pa-submit')) $('pa-submit').addEventListener('click', requestReport);
 
   /* ---------------------------------------------------------------------
      Init
   --------------------------------------------------------------------- */
   render();
-  renderReport();
 })();
