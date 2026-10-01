@@ -39,7 +39,7 @@
     // Leave '' to keep using the demo stub.
     // When the n8n workflow exists, paste its PRODUCTION webhook URL here,
     // e.g. 'https://<your-n8n-host>/webhook/portfolio-analyzer'
-    SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/94be0935-9a9d-42ce-972a-c9406630608a/ef9dcf52-9150-407e-94b3-dc88d0b4bfb5',
+    SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/portfolio-analyzer-test',
     // Abort the request if the workflow hasn't answered in this many ms.
     TIMEOUT_MS: 180000
   };
