@@ -41,6 +41,11 @@
     // e.g. 'https://<your-n8n-host>/webhook/portfolio-analyzer'
     SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/portfolio-analyzer-ycharts',
     // Abort the request if the workflow hasn't answered in this many ms.
+    // Where the page asks "is my report ready?" (PRODUCTION URL of the always-active status workflow).
+    STATUS_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook/portfolio-analyzer-status',
+    // How often to ask, in ms.
+    POLL_MS: 5000,
+    // Give up waiting for the finished report after this many ms (covers the whole job, not one request).
     TIMEOUT_MS: 300000
   };
 
@@ -299,34 +304,63 @@
     formData.append('fileNames', JSON.stringify(fileList.map(function (x) { return x.file.name; })));
     formData.append('source', 'milemarker-portfolio-analyzer');
 
-    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    var timer = controller ? setTimeout(function () { controller.abort(); }, CONFIG.TIMEOUT_MS) : null;
+    var startedAt = Date.now();
 
-    return fetch(CONFIG.SUBMIT_ENDPOINT, {
-      method: 'POST',
-      body: formData,
-      signal: controller ? controller.signal : undefined
-    }).then(function (res) {
-      if (timer) clearTimeout(timer);
-      if (!res.ok) {
-        return res.json().catch(function () { return {}; }).then(function (body) {
-          throw new Error(body.message || ('Request failed (' + res.status + ')'));
-        });
-      }
-      return res.text().then(function (t) {
-        if (!t) throw new Error('The report service returned an empty response (the workflow may have stopped with an error - check n8n Executions)');
-        try { return JSON.parse(t); } catch (e) { throw new Error('The report service returned an unreadable response'); }
+    // Step 1: send the files. n8n answers within a second or two with { jobId }.
+    return fetch(CONFIG.SUBMIT_ENDPOINT, { method: 'POST', body: formData })
+      .then(readJson)
+      .then(function (body) {
+        // Older single-request workflows may still reply with the finished report directly.
+        if (body && (body.html || body.pdfUrl)) return withPdfPreview(body);
+        if (!body || !body.jobId) throw new Error('The report service did not return a job ID');
+        // Step 2: ask the status endpoint until the job is done.
+        return pollJob(body.jobId, startedAt);
       });
-    }).then(function (body) {
-      // pdfUrl responses get a simple inline preview so the panel isn't blank
-      if (body && !body.html && body.pdfUrl) {
-        body.html = '<iframe src="' + esc(body.pdfUrl) + '" style="width:100%;height:900px;border:0;"></iframe>';
-      }
+  }
+
+  // Reads a response as JSON without choking on empty bodies; turns HTTP errors into Errors.
+  function readJson(res) {
+    return res.text().then(function (text) {
+      var body = {};
+      try { body = text ? JSON.parse(text) : {}; } catch (e) { body = {}; }
+      if (!res.ok) throw new Error(body.message || ('Request failed (' + res.status + ')'));
       return body;
-    }, function (err) {
-      if (timer) clearTimeout(timer);
-      if (err && err.name === 'AbortError') throw new Error('The report service took too long to respond');
-      throw err;
+    });
+  }
+
+  function withPdfPreview(body) {
+    if (body && !body.html && body.pdfUrl) {
+      body.html =
+        '<div style="padding:10px 16px;font-family:Inter,sans-serif;font-size:13px;">' +
+          '<a href="' + esc(body.pdfUrl) + '" target="_blank" rel="noopener" style="color:#B8944B;font-weight:600;">Open report in a new tab</a>' +
+        '</div>' +
+        '<iframe src="' + esc(body.pdfUrl) + '" style="width:100%;height:900px;border:0;"></iframe>';
+    }
+    return body;
+  }
+
+  function pollJob(jobId, startedAt) {
+    return new Promise(function (resolve, reject) {
+      var misses = 0; // consecutive failed status checks (a brief network blip should not abort the job)
+      (function tick() {
+        if (Date.now() - startedAt > CONFIG.TIMEOUT_MS) {
+          return reject(new Error('The report service took too long to respond'));
+        }
+        fetch(CONFIG.STATUS_ENDPOINT + '?jobId=' + encodeURIComponent(jobId))
+          .then(readJson)
+          .then(function (b) {
+            misses = 0;
+            if (b.status === 'done' && b.pdfUrl) return resolve(withPdfPreview(b));
+            if (b.status === 'error') return reject(new Error(b.message || 'Report generation failed'));
+            if (b.status === 'unknown') return reject(new Error('The report job could not be found'));
+            setTimeout(tick, CONFIG.POLL_MS); // still running
+          })
+          .catch(function (err) {
+            misses++;
+            if (misses >= 3) return reject(err);
+            setTimeout(tick, CONFIG.POLL_MS);
+          });
+      })();
     });
   }
 
