@@ -42,7 +42,7 @@
     SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/portfolio-analyzer-ycharts',
     // Abort the request if the workflow hasn't answered in this many ms.
     // Where the page asks "is my report ready?" (PRODUCTION URL of the always-active status workflow).
-    STATUS_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook/portfolio-analyzer-status',
+    STATUS_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/portfolio-analyzer-status',
     // How often to ask, in ms.
     POLL_MS: 5000,
     // Give up waiting for the finished report after this many ms (covers the whole job, not one request).
