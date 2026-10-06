@@ -314,11 +314,6 @@
           throw new Error(body.message || ('Request failed (' + res.status + ')'));
         });
       }
-      // The workflow replies with the PDF file itself (or JSON with a pdfUrl as a fallback)
-      var type = (res.headers.get('content-type') || '').toLowerCase();
-      if (type.indexOf('application/pdf') !== -1) {
-        return res.blob().then(function (blob) { return { pdfBlob: blob }; });
-      }
       return res.text().then(function (t) {
         if (!t) throw new Error('The report service returned an empty response (the workflow may have stopped with an error - check n8n Executions)');
         try { return JSON.parse(t); } catch (e) { throw new Error('The report service returned an unreadable response'); }
@@ -340,14 +335,6 @@
     return (base ? base + ' - ' : '') + 'Portfolio Review.pdf';
   }
   function withPdfPreview(body) {
-    if (body && body.pdfBlob) {
-      if (currentBlobUrl) { try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {} }
-      currentBlobUrl = URL.createObjectURL(new Blob([body.pdfBlob], { type: 'application/pdf' }));
-      body.html = '<div style="padding:10px 16px;font-family:Inter,sans-serif;font-size:13px;">' +
-        '<a href="' + currentBlobUrl + '" download="' + esc(reportFileName()) + '" style="color:#B8944B;font-weight:600;">Download report (PDF)</a></div>' +
-        '<iframe src="' + currentBlobUrl + '" style="width:100%;height:900px;border:0;"></iframe>';
-      return body;
-    }
     if (!body || body.html || !body.pdfUrl) return body;
     var linkStyle = 'color:#B8944B;font-weight:600;';
     var bar = function (href, extra, dl) {
