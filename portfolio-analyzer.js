@@ -40,7 +40,7 @@
     // When the n8n workflow exists, paste its PRODUCTION webhook URL here,
     // e.g. 'https://<your-n8n-host>/webhook/portfolio-analyzer'
     // Must be the PRODUCTION URL (/webhook/...) and the workflow must be active: the page makes several requests per report.
-    SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook/portfolio-analyzer-ycharts',
+    SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/portfolio-analyzer-ycharts',
     // Abort the request if the workflow hasn't answered in this many ms.
     // How often to ask, in ms.
     POLL_MS: 5000,
