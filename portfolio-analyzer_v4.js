@@ -39,14 +39,9 @@
     // Leave '' to keep using the demo stub.
     // When the n8n workflow exists, paste its PRODUCTION webhook URL here,
     // e.g. 'https://<your-n8n-host>/webhook/portfolio-analyzer'
-    // Must be the PRODUCTION URL (/webhook/...) and the workflow must be active: the page makes several requests per report.
-    SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook/portfolio-analyzer-ycharts',
+    SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/portfolio-analyzer-ycharts',
     // Abort the request if the workflow hasn't answered in this many ms.
-    // How often to ask, in ms.
-    POLL_MS: 5000,
-    // Give up waiting for the finished report after this many ms (covers the whole job, not one request).
-    TIMEOUT_MS: 900000,
-    HOUSEHOLD_WAIT_MS: 60000 // wait before combining accounts into a household (milliseconds)
+    TIMEOUT_MS: 300000
   };
 
   /* ---------------------------------------------------------------------
@@ -236,7 +231,7 @@
         ? 'Building the report — this can take a minute.'
         : (report && stale)
           ? 'Files changed since the last report. Generate again to update it.'
-          : 'Upload one or more statements. Several statements are combined into one household report.';
+          : 'Upload one statement per report (a statement covering several accounts is fine), then generate the report.';
     }
   }
 
@@ -256,7 +251,7 @@
     if (!files.length || generating) return;
     var token = ++reportRequestToken;
     generating = true;
-    report = null; // clear the previous report so it is not reloaded/re-downloaded
+    report = null; // clear the previous report
     render();
     status('Analyzing statement' + (files.length > 1 ? 's' : '') + ' and building report…', 'busy');
 
@@ -298,114 +293,37 @@
   ========================================================================= */
   function generatePortfolioReport(fileList) {
     if (!CONFIG.SUBMIT_ENDPOINT) return demoStub(fileList);
-    var startedAt = Date.now();
 
-    // The report is built in short steps. Each step is its own quick request, and the page
-    // carries the IDs from one step to the next, so no single request stays open for long.
-    // One or many statements: each file is read on its own, every account becomes a portfolio,
-    // and (when there is more than one account) they are combined into one household.
+    var formData = new FormData();
+    fileList.forEach(function (x, i) { formData.append('file' + i, x.file, x.file.name); });
+    formData.append('fileCount', String(fileList.length));
+    formData.append('fileNames', JSON.stringify(fileList.map(function (x) { return x.file.name; })));
+    formData.append('source', 'milemarker-portfolio-analyzer');
 
-    // 1) upload each statement; YCharts starts reading it
-    return sequence(fileList, function (x) {
-      var start = formOf({ step: 'start', fileCount: '1', fileNames: JSON.stringify([x.file.name]), source: 'milemarker-portfolio-analyzer' });
-      start.append('file0', x.file, x.file.name);
-      return callStep(start).then(function (b) {
-        if (!b.extractionId) throw new Error('The report service did not return an extraction ID for ' + x.file.name);
-        return b.extractionId;
-      });
-    }).then(function (extractionIds) {
-      // 2) wait for each statement to be read; the service creates one portfolio per account
-      return Promise.all(extractionIds.map(function (id) {
-        return pollStep({ step: 'extract', extractionId: id }, 'accounts', startedAt);
-      }));
-    }).then(function (results) {
-      var accounts = [], skipped = [];
-      results.forEach(function (r) {
-        accounts = accounts.concat(r.accounts || []);
-        skipped = skipped.concat(r.skipped || []);
-      });
-      if (!accounts.length) throw new Error('No accounts were found in the uploaded statement' + (fileList.length > 1 ? 's' : ''));
-      // 3) wait for YCharts to finish calculating each account portfolio
-      return Promise.all(accounts.map(function (a) {
-        return pollStep({ step: 'portfolio', portfolioId: a.id }, 'ready', startedAt);
-      })).then(function () {
-        // 4) one account: use it. Several accounts: combine them into one household.
-        if (accounts.length === 1) return { portfolioId: accounts[0].id, skipped: skipped };
-        // give YCharts a minute to load the new account portfolios before combining them
-        return new Promise(function (r) { setTimeout(r, CONFIG.HOUSEHOLD_WAIT_MS); }).then(function () {
-          return callStep(formOf({ step: 'household', accounts: JSON.stringify(accounts), skipped: JSON.stringify(skipped) }));
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, CONFIG.TIMEOUT_MS) : null;
+
+    return fetch(CONFIG.SUBMIT_ENDPOINT, {
+      method: 'POST',
+      body: formData,
+      signal: controller ? controller.signal : undefined
+    }).then(function (res) {
+      if (timer) clearTimeout(timer);
+      if (!res.ok) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          throw new Error(body.message || ('Request failed (' + res.status + ')'));
         });
+      }
+      return res.text().then(function (t) {
+        if (!t) throw new Error('The report service returned an empty response (the workflow may have stopped with an error - check n8n Executions)');
+        try { return JSON.parse(t); } catch (e) { throw new Error('The report service returned an unreadable response'); }
       });
-    }).then(function (created) {
-      if (!created.portfolioId) throw new Error('The report service did not return a portfolio ID');
-      // 5) wait for the final portfolio to be ready, then 6) build the PDF
-      return pollStep({ step: 'portfolio', portfolioId: created.portfolioId }, 'ready', startedAt).then(function () {
-        return callStep(formOf({
-          step: 'report',
-          portfolioId: created.portfolioId,
-          skipped: JSON.stringify(created.skipped || [])
-        }));
-      });
-    }).then(function (r) {
-      if (!r.pdfUrl) throw new Error('The report service did not return a report link');
-      return withPdfPreview(r);
-    });
-  }
-
-  // Runs fn on each item one after another and resolves with the list of results.
-  function sequence(items, fn) {
-    var out = [];
-    return items.reduce(function (p, item) {
-      return p.then(function () { return fn(item).then(function (v) { out.push(v); }); });
-    }, Promise.resolve()).then(function () { return out; });
-  }
-
-  function formOf(obj) {
-    var fd = new FormData();
-    Object.keys(obj).forEach(function (k) { fd.append(k, obj[k]); });
-    return fd;
-  }
-
-  // One quick request. A reply of { state: 'error', message } becomes an Error.
-  function callStep(formData) {
-    return fetch(CONFIG.SUBMIT_ENDPOINT, { method: 'POST', body: formData })
-      .then(readJson)
-      .then(function (b) {
-        if (b && b.state === 'error') throw new Error(b.message || 'Report generation failed');
-        return b;
-      });
-  }
-
-  // Repeats a step every POLL_MS until the reply's state equals doneState.
-  function pollStep(fields, doneState, startedAt) {
-    return new Promise(function (resolve, reject) {
-      var misses = 0; // consecutive failed checks; a brief network blip should not abort the job
-      (function tick() {
-        if (Date.now() - startedAt > CONFIG.TIMEOUT_MS) {
-          return reject(new Error('The report service took too long to respond'));
-        }
-        callStep(formOf(fields)).then(function (b) {
-          misses = 0;
-          if (b.state === doneState) return resolve(b);
-          setTimeout(tick, CONFIG.POLL_MS);
-        }).catch(function (err) {
-          // an error reported by the service is final; a network failure is retried a few times
-          if (/Failed to fetch|NetworkError|Load failed/i.test(String(err && err.message)) && ++misses < 3) {
-            return setTimeout(tick, CONFIG.POLL_MS);
-          }
-          reject(err);
-        });
-      })();
-    });
-  }
-
-  // Reads a response as JSON without choking on empty bodies; turns HTTP errors into Errors.
-  function readJson(res) {
-    return res.text().then(function (text) {
-      var body = {};
-      try { body = text ? JSON.parse(text) : {}; } catch (e) { body = {}; }
-      if (!res.ok) throw new Error(body.message || ('Request failed (' + res.status + ')'));
-      return body;
+    }).then(function (body) {
+      return withPdfPreview(body);
+    }, function (err) {
+      if (timer) clearTimeout(timer);
+      if (err && err.name === 'AbortError') throw new Error('The report service took too long to respond');
+      throw err;
     });
   }
 
