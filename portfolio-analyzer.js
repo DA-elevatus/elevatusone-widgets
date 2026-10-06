@@ -41,7 +41,7 @@
     // e.g. 'https://<your-n8n-host>/webhook/portfolio-analyzer'
     SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/portfolio-analyzer-ycharts',
     // Abort the request if the workflow hasn't answered in this many ms.
-    TIMEOUT_MS: 180000
+    TIMEOUT_MS: 300000
   };
 
   /* ---------------------------------------------------------------------
@@ -113,7 +113,7 @@
 
     if (added) filesChanged();
 
-    var next = ' Click Generate Report when all files are added.';
+    var next = ' Click Generate Report when ready.';
     if (rejected.length && !added) {
       status('Unsupported file type: ' + rejected.join(', ') + '. Please upload a PDF, CSV, Excel, or TXT file.', 'error');
     } else if (rejected.length) {
@@ -231,7 +231,7 @@
         ? 'Building the report — this can take a minute.'
         : (report && stale)
           ? 'Files changed since the last report. Generate again to update it.'
-          : 'Add every statement for this household, then generate the report.';
+          : 'Upload one statement per report (a statement covering several accounts is fine), then generate the report.';
     }
   }
 
@@ -313,7 +313,10 @@
           throw new Error(body.message || ('Request failed (' + res.status + ')'));
         });
       }
-      return res.json();
+      return res.text().then(function (t) {
+        if (!t) throw new Error('The report service returned an empty response (the workflow may have stopped with an error - check n8n Executions)');
+        try { return JSON.parse(t); } catch (e) { throw new Error('The report service returned an unreadable response'); }
+      });
     }).then(function (body) {
       // pdfUrl responses get a simple inline preview so the panel isn't blank
       if (body && !body.html && body.pdfUrl) {
