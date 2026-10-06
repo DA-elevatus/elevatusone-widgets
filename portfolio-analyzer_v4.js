@@ -314,6 +314,11 @@
           throw new Error(body.message || ('Request failed (' + res.status + ')'));
         });
       }
+      // The workflow replies with the PDF file itself (or JSON with a pdfUrl as a fallback)
+      var type = (res.headers.get('content-type') || '').toLowerCase();
+      if (type.indexOf('application/pdf') !== -1) {
+        return res.blob().then(function (blob) { return { pdfBlob: blob }; });
+      }
       return res.text().then(function (t) {
         if (!t) throw new Error('The report service returned an empty response (the workflow may have stopped with an error - check n8n Executions)');
         try { return JSON.parse(t); } catch (e) { throw new Error('The report service returned an unreadable response'); }
@@ -328,24 +333,39 @@
   }
 
   var currentBlobUrl = null;
+  // File name used when the advisor downloads the report (edit this to change it).
+  // Uses the first uploaded statement's name, e.g. "Smith Household - Portfolio Review.pdf".
+  function reportFileName() {
+    var base = files.length ? String(files[0].file.name || '').replace(/\.[a-z0-9]+$/i, '').trim() : '';
+    return (base ? base + ' - ' : '') + 'Portfolio Review.pdf';
+  }
   function withPdfPreview(body) {
+    if (body && body.pdfBlob) {
+      if (currentBlobUrl) { try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {} }
+      currentBlobUrl = URL.createObjectURL(new Blob([body.pdfBlob], { type: 'application/pdf' }));
+      body.html = '<div style="padding:10px 16px;font-family:Inter,sans-serif;font-size:13px;">' +
+        '<a href="' + currentBlobUrl + '" download="' + esc(reportFileName()) + '" style="color:#B8944B;font-weight:600;">Download report (PDF)</a></div>' +
+        '<iframe src="' + currentBlobUrl + '" style="width:100%;height:900px;border:0;"></iframe>';
+      return body;
+    }
     if (!body || body.html || !body.pdfUrl) return body;
-    var link = '<a href="' + esc(body.pdfUrl) + '" target="_blank" rel="noopener" style="color:#B8944B;font-weight:600;">Download report (PDF)</a>';
-    var bar = function (extra) {
-      return '<div style="padding:10px 16px;font-family:Inter,sans-serif;font-size:13px;">' + link + (extra || '') + '</div>';
+    var linkStyle = 'color:#B8944B;font-weight:600;';
+    var bar = function (href, extra, dl) {
+      return '<div style="padding:10px 16px;font-family:Inter,sans-serif;font-size:13px;">' +
+        '<a href="' + esc(href) + '"' + (dl ? ' download="' + esc(dl) + '"' : ' target="_blank" rel="noopener"') + ' style="' + linkStyle + '">Download report (PDF)</a>' + (extra || '') + '</div>';
     };
-    // Try to load the PDF as a blob so it shows inline. If the storage host blocks
-    // cross-origin reads, fall back to the download link only (never an auto-loading iframe).
+    // Load the PDF into the page so it shows inline and downloads under our own file name.
+    // If the storage host blocks cross-origin reads, fall back to the plain link (YCharts' file name).
     return fetch(body.pdfUrl).then(function (res) {
       if (!res.ok) throw new Error('fetch failed');
       return res.blob();
     }).then(function (blob) {
       if (currentBlobUrl) { try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {} }
       currentBlobUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
-      body.html = bar() + '<iframe src="' + currentBlobUrl + '" style="width:100%;height:900px;border:0;"></iframe>';
+      body.html = bar(currentBlobUrl, '', reportFileName()) + '<iframe src="' + currentBlobUrl + '" style="width:100%;height:900px;border:0;"></iframe>';
       return body;
     }).catch(function () {
-      body.html = bar('<span style="margin-left:12px;color:#777;">Inline preview is not available in this browser; use the link to view the PDF.</span>');
+      body.html = bar(body.pdfUrl, '<span style="margin-left:12px;color:#777;">Inline preview is not available in this browser; use the link to view the PDF.</span>');
       return body;
     });
   }
