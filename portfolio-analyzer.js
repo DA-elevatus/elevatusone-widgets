@@ -39,14 +39,13 @@
     // Leave '' to keep using the demo stub.
     // When the n8n workflow exists, paste its PRODUCTION webhook URL here,
     // e.g. 'https://<your-n8n-host>/webhook/portfolio-analyzer'
-    SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook-test/portfolio-analyzer-ycharts',
+    // Must be the PRODUCTION URL (/webhook/...) and the workflow must be active: the page makes several requests per report.
+    SUBMIT_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook/portfolio-analyzer-ycharts',
     // Abort the request if the workflow hasn't answered in this many ms.
-    // Where the page asks "is my report ready?" (PRODUCTION URL of the always-active status workflow).
-    STATUS_ENDPOINT: 'https://projection.milemarker-cloud.com/webhook/portfolio-analyzer-status',
     // How often to ask, in ms.
     POLL_MS: 5000,
     // Give up waiting for the finished report after this many ms (covers the whole job, not one request).
-    TIMEOUT_MS: 300000
+    TIMEOUT_MS: 480000
   };
 
   /* ---------------------------------------------------------------------
@@ -297,25 +296,77 @@
   ========================================================================= */
   function generatePortfolioReport(fileList) {
     if (!CONFIG.SUBMIT_ENDPOINT) return demoStub(fileList);
-
-    var formData = new FormData();
-    fileList.forEach(function (x, i) { formData.append('file' + i, x.file, x.file.name); });
-    formData.append('fileCount', String(fileList.length));
-    formData.append('fileNames', JSON.stringify(fileList.map(function (x) { return x.file.name; })));
-    formData.append('source', 'milemarker-portfolio-analyzer');
-
     var startedAt = Date.now();
 
-    // Step 1: send the files. n8n answers within a second or two with { jobId }.
+    // The report is built in short steps. Each step is its own quick request, and the page
+    // carries the IDs from one step to the next, so no single request stays open for long.
+    var start = formOf({
+      step: 'start',
+      fileCount: String(fileList.length),
+      fileNames: JSON.stringify(fileList.map(function (x) { return x.file.name; })),
+      source: 'milemarker-portfolio-analyzer'
+    });
+    fileList.forEach(function (x, i) { start.append('file' + i, x.file, x.file.name); });
+
+    // 1) upload the statement; YCharts starts reading it
+    return callStep(start).then(function (b) {
+      if (!b.extractionId) throw new Error('The report service did not return an extraction ID');
+      // 2) wait for the statement to be read; the service then creates the portfolio(s)
+      return pollStep({ step: 'extract', extractionId: b.extractionId }, 'portfolio', startedAt);
+    }).then(function (created) {
+      if (!created.portfolioId) throw new Error('The report service did not return a portfolio ID');
+      // 3) wait for YCharts to finish calculating the portfolio
+      return pollStep({ step: 'portfolio', portfolioId: created.portfolioId }, 'ready', startedAt).then(function () {
+        // 4) build the PDF
+        return callStep(formOf({
+          step: 'report',
+          portfolioId: created.portfolioId,
+          skipped: JSON.stringify(created.skipped || [])
+        }));
+      });
+    }).then(function (r) {
+      if (!r.pdfUrl) throw new Error('The report service did not return a report link');
+      return withPdfPreview(r);
+    });
+  }
+
+  function formOf(obj) {
+    var fd = new FormData();
+    Object.keys(obj).forEach(function (k) { fd.append(k, obj[k]); });
+    return fd;
+  }
+
+  // One quick request. A reply of { state: 'error', message } becomes an Error.
+  function callStep(formData) {
     return fetch(CONFIG.SUBMIT_ENDPOINT, { method: 'POST', body: formData })
       .then(readJson)
-      .then(function (body) {
-        // Older single-request workflows may still reply with the finished report directly.
-        if (body && (body.html || body.pdfUrl)) return withPdfPreview(body);
-        if (!body || !body.jobId) throw new Error('The report service did not return a job ID');
-        // Step 2: ask the status endpoint until the job is done.
-        return pollJob(body.jobId, startedAt);
+      .then(function (b) {
+        if (b && b.state === 'error') throw new Error(b.message || 'Report generation failed');
+        return b;
       });
+  }
+
+  // Repeats a step every POLL_MS until the reply's state equals doneState.
+  function pollStep(fields, doneState, startedAt) {
+    return new Promise(function (resolve, reject) {
+      var misses = 0; // consecutive failed checks; a brief network blip should not abort the job
+      (function tick() {
+        if (Date.now() - startedAt > CONFIG.TIMEOUT_MS) {
+          return reject(new Error('The report service took too long to respond'));
+        }
+        callStep(formOf(fields)).then(function (b) {
+          misses = 0;
+          if (b.state === doneState) return resolve(b);
+          setTimeout(tick, CONFIG.POLL_MS);
+        }).catch(function (err) {
+          // an error reported by the service is final; a network failure is retried a few times
+          if (/Failed to fetch|NetworkError|Load failed/i.test(String(err && err.message)) && ++misses < 3) {
+            return setTimeout(tick, CONFIG.POLL_MS);
+          }
+          reject(err);
+        });
+      })();
+    });
   }
 
   // Reads a response as JSON without choking on empty bodies; turns HTTP errors into Errors.
@@ -337,31 +388,6 @@
         '<iframe src="' + esc(body.pdfUrl) + '" style="width:100%;height:900px;border:0;"></iframe>';
     }
     return body;
-  }
-
-  function pollJob(jobId, startedAt) {
-    return new Promise(function (resolve, reject) {
-      var misses = 0; // consecutive failed status checks (a brief network blip should not abort the job)
-      (function tick() {
-        if (Date.now() - startedAt > CONFIG.TIMEOUT_MS) {
-          return reject(new Error('The report service took too long to respond'));
-        }
-        fetch(CONFIG.STATUS_ENDPOINT + '?jobId=' + encodeURIComponent(jobId))
-          .then(readJson)
-          .then(function (b) {
-            misses = 0;
-            if (b.status === 'done' && b.pdfUrl) return resolve(withPdfPreview(b));
-            if (b.status === 'error') return reject(new Error(b.message || 'Report generation failed'));
-            if (b.status === 'unknown') return reject(new Error('The report job could not be found'));
-            setTimeout(tick, CONFIG.POLL_MS); // still running
-          })
-          .catch(function (err) {
-            misses++;
-            if (misses >= 3) return reject(err);
-            setTimeout(tick, CONFIG.POLL_MS);
-          });
-      })();
-    });
   }
 
   // DEMO STUB — used while CONFIG.SUBMIT_ENDPOINT is ''.
