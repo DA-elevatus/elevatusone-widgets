@@ -109,6 +109,7 @@
   }
 
   function addFiles(list) {
+    if (generating) return; // locked while a report is being generated
     var added = 0, rejected = [];
     Array.prototype.forEach.call(list || [], function (f) {
       if (ALLOWED.indexOf(ext(f.name)) === -1) { rejected.push(f.name); return; }
@@ -131,6 +132,7 @@
   }
 
   function removeFile(id) {
+    if (generating) return;
     var x = find(id);
     if (x) URL.revokeObjectURL(x.url);
     files = files.filter(function (f) { return f.id !== id; });
@@ -146,6 +148,7 @@
   }
 
   function clearAll() {
+    if (generating) return;
     files.forEach(function (x) { URL.revokeObjectURL(x.url); });
     files = [];
     report = null;
@@ -183,7 +186,8 @@
 
     var th = 'text-align:left;padding:10px 14px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#C5A572;border-bottom:1px solid #334155;';
     var td = 'padding:10px 14px;font-size:13px;color:#e2e8f0;border-bottom:1px solid #334155;';
-    var btn = 'background:transparent;color:#e2e8f0;font-size:12px;font-weight:600;border:1px solid #475569;border-radius:6px;padding:6px 12px;cursor:pointer;font-family:inherit;margin-left:6px;';
+    var lockedAttr = generating ? ' disabled' : '';
+    var btn = (generating ? 'opacity:0.45;cursor:not-allowed;' : '') + 'background:transparent;color:#e2e8f0;font-size:12px;font-weight:600;border:1px solid #475569;border-radius:6px;padding:6px 12px;cursor:pointer;font-family:inherit;margin-left:6px;';
 
     $('pa-table').innerHTML =
       '<table style="width:100%;border-collapse:collapse;">' +
@@ -194,9 +198,9 @@
           '<td style="' + td + '">' + esc((ext(x.file.name) || 'file').toUpperCase()) + '</td>' +
           '<td style="' + td + '">' + size(x.file.size) + '</td>' +
           '<td style="' + td + 'text-align:right;white-space:nowrap;">' +
-            '<button type="button" data-view="' + x.id + '" style="' + btn + '">View</button>' +
-            '<button type="button" data-dl="' + x.id + '" style="' + btn + '">Download</button>' +
-            '<button type="button" data-rm="' + x.id + '" style="' + btn + 'color:#94a3b8;">Remove</button>' +
+            '<button type="button"' + lockedAttr + ' data-view="' + x.id + '" style="' + btn + '">View</button>' +
+            '<button type="button"' + lockedAttr + ' data-dl="' + x.id + '" style="' + btn + '">Download</button>' +
+            '<button type="button"' + lockedAttr + ' data-rm="' + x.id + '" style="' + btn + 'color:#94a3b8;">Remove</button>' +
           '</td></tr>';
       }).join('') + '</tbody></table>';
 
@@ -222,7 +226,17 @@
   /* ---------------------------------------------------------------------
      Submit button
   --------------------------------------------------------------------- */
+  // Locks everything that could change the file list or start another report while one is running.
+  function lockControls() {
+    var locked = generating;
+    var fileInput = $('pa-file'), dropBox = $('pa-drop'), clearBtn = $('pa-clear');
+    if (fileInput) fileInput.disabled = locked;
+    if (dropBox) { dropBox.style.pointerEvents = locked ? 'none' : ''; dropBox.style.opacity = locked ? '0.55' : ''; }
+    if (clearBtn) { clearBtn.disabled = locked; clearBtn.style.opacity = locked ? '0.45' : ''; clearBtn.style.cursor = locked ? 'not-allowed' : ''; }
+  }
+
   function renderSubmit() {
+    lockControls();
     var b = $('pa-submit');
     var hint = $('pa-submit-hint');
     if (!b) return;
@@ -241,6 +255,7 @@
   }
 
   $('pa-table').addEventListener('click', function (e) {
+    if (generating) return;
     var v = e.target.getAttribute('data-view');
     var d = e.target.getAttribute('data-dl');
     var r = e.target.getAttribute('data-rm');
@@ -528,7 +543,18 @@
     });
   });
   drop.addEventListener('drop', function (e) {
+    if (generating) return;
     if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  });
+
+  // While locked, stop a dropped file from making the browser open it instead.
+  ['dragover', 'drop'].forEach(function (ev) {
+    window.addEventListener(ev, function (e) { if (generating) e.preventDefault(); });
+  });
+
+  // Warn before leaving mid-report: a refresh stops the report (nothing will be shown when it finishes).
+  window.addEventListener('beforeunload', function (e) {
+    if (generating) { e.preventDefault(); e.returnValue = ''; return ''; }
   });
 
   $('pa-clear').addEventListener('click', clearAll);
